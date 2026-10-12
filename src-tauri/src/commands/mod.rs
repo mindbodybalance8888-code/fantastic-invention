@@ -1,0 +1,111 @@
+pub mod agent;
+pub mod bg_tasks;
+pub mod chat_attachments;
+pub mod cloud_file;
+pub mod repo_map;
+pub mod comfy_folders;
+pub mod comfy_ws;
+pub mod computer;
+pub mod custom_models;
+pub mod download;
+pub mod engine;
+pub mod engine_sanity;
+pub mod filesystem;
+pub mod gguf;
+pub mod gpu;
+pub mod health;
+pub mod install;
+pub mod install_method;
+pub mod install_method_cmd;
+pub mod self_migrate;
+pub mod self_migrate_cmd;
+pub mod local_api;
+pub mod logging;
+pub mod media_cmds;
+pub mod mlx;
+pub mod mlx_loras;
+pub mod mlx_outputs;
+pub mod mlx_snapshot;
+pub mod model_sniff;
+pub mod oauth;
+pub mod process;
+pub mod proxy;
+pub mod remote;
+pub mod search;
+pub mod secret;
+pub mod shell;
+pub mod system;
+pub mod torch_wheels;
+pub mod trainer;
+pub mod tts;
+pub mod video;
+pub mod voice_loop;
+pub mod waitlist;
+pub mod web_body;
+pub mod web_reach;
+pub mod funnel;
+pub mod gallery_files;
+pub mod whisper;
+
+// ── the web app-compat error helpers ────────────────────────────────────────
+//
+// the web app's bridge daemon (axum) uses `internal(msg)` / `bad_request(msg)` /
+// `not_found(msg)` helpers that return a structured (StatusCode, Json)
+// tuple. The desktop Tauri command convention is `Result<Value, String>`
+// where every error collapses to a plain String — Tauri's IPC bridge
+// turns it into a JS-side rejection. Re-export the same three names as
+// no-op `Into<String>` helpers so files ported verbatim from the web app
+// compile without rewriting every `bad_request(...)` call site.
+pub type CmdResult = Result<serde_json::Value, String>;
+
+#[allow(dead_code)]
+pub fn internal(msg: impl Into<String>) -> String { msg.into() }
+#[allow(dead_code)]
+pub fn bad_request(msg: impl Into<String>) -> String { msg.into() }
+#[allow(dead_code)]
+pub fn not_found(msg: impl Into<String>) -> String { msg.into() }
+
+// ── What the latency guard counts ─────────────────────────────────────
+//
+// A command the interface waits on reads files and memory. It starts no
+// interpreter (a tenth of a second at best, five with `import mlx_video`) and
+// asks no network: both belong to an install thread, behind the answer.
+// `media_latency_guard` holds the status and list commands to that by counting
+// on the thread that runs them. Outside the tests the two `note_*` calls are
+// empty.
+
+#[cfg(test)]
+thread_local! {
+    static INTERPRETER_COMMANDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static HUB_REQUESTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Called wherever an interpreter command is built (`python::python_command`).
+pub(crate) fn note_interpreter_command() {
+    #[cfg(test)]
+    INTERPRETER_COMMANDS.with(|n| n.set(n.get() + 1));
+}
+
+/// Called by every request towards the model hub (`mlx::hub_get`).
+pub(crate) fn note_hub_request() {
+    #[cfg(test)]
+    HUB_REQUESTS.with(|n| n.set(n.get() + 1));
+}
+
+#[cfg(test)]
+pub(crate) fn interpreter_commands_built() -> usize {
+    INTERPRETER_COMMANDS.with(|n| n.get())
+}
+
+#[cfg(test)]
+pub(crate) fn hub_requests_sent() -> usize {
+    HUB_REQUESTS.with(|n| n.get())
+}
+
+#[cfg(test)]
+mod media_latency_guard;
+
+/// The real run on the Mac: the commands above against real engines and real
+/// models. Ignored unless asked for by name, see the file.
+#[cfg(all(test, target_os = "macos"))]
+mod real_run_mac;
