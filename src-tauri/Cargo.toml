@@ -1,0 +1,154 @@
+[package]
+name = "locally-uncensored"
+version = "3.0.6"
+description = "Private, local AI chat & image/video generation"
+authors = ["purpledoubled"]
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[features]
+# Test-only: let LU_NO_KEYCHAIN / ~/.lu-no-keychain bypass the OS keychain during
+# unattended rebuild→open E2E loops. NEVER enabled in a shipped build (not in any
+# default), so a release binary always uses the OS vault regardless of env vars or
+# marker files. Build test artifacts with: tauri build --features insecure-test-keychain
+insecure-test-keychain = []
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools", "tray-icon", "image-png"] }
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+# The same signature check the updater plugin runs, for the one download the
+# plugin cannot do for us: the AppImage LU installs into the home folder when
+# it was repackaged by somebody else (commands/self_migrate.rs). Already in
+# Cargo.lock as a dependency of the plugin, so this adds no crate to the build.
+minisign-verify = "0.2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["stream", "blocking", "json", "multipart"] }
+zip = "2"
+dirs = "6"
+# Python interpreter discovery for the in-process MLX media engine
+# (os_paths::find_python, mlx.rs::locate_python_311).
+which = "6"
+regex = "1"
+glob = "0.3"
+sysinfo = "0.33"
+# Gallery delete moves the render to the Recycle Bin / Trash instead of
+# erasing it (Discord 2026-09-25: deleted renders stayed in ComfyUI/output).
+trash = "5"
+walkdir = "2"
+hostname = "0.4"
+whoami = "1"
+num_cpus = "1"
+base64 = "0.22"
+tempfile = "3"
+futures-util = "0.3"
+once_cell = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio-util = "0.7"
+urlencoding = "2"
+url = "2"
+rfd = "0.15"
+# Remote Access
+axum = { version = "0.8", features = ["ws"] }
+tokio-tungstenite = "0.26"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+jsonwebtoken = "9"
+qrcode = "0.14"
+# "jpeg" is for the screenshots of computer use (commands/computer): a JPEG of
+# a desktop is a fifth of the PNG. It adds zune-jpeg (MIT OR Apache-2.0 OR Zlib).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+rand = "0.8"
+sha2 = "0.10"
+# Unpacking the private Python of the voice loop (commands/voice_loop). Both
+# are already in Cargo.lock through the updater plugin, so this adds no crate
+# to the build.
+tar = "0.4"
+# flate2 serves the voice loop and the unpacking of a fetched page. One line,
+# a key may not stand twice.
+flate2 = "1"
+# Unpacking a fetched page (commands/web_body.rs): a server may pack its answer
+# with gzip, deflate, brotli or zstd whether the request asks for it or not.
+# All three are in the build already (png brings flate2, tauri-utils brings
+# brotli, zip brings zstd), with exactly these features, so naming them adds
+# no crate and no feature to any target.
+brotli = { version = "8", default-features = false, features = ["std"] }
+zstd = { version = "0.13", default-features = false }
+local-ip-address = "0.6"
+socket2 = "0.5"
+# Structured tracing — used for the JSON-log mode behind `LU_LOG_FORMAT=json`
+# (the web app Phase 3 parity). Default formatter is the compact text layer so
+# the existing console output stays readable for a desktop user.
+# Local time with a real UTC offset for the agent's get_current_time tool.
+# Already resolved in the lock (jsonwebtoken pulls it with `clock` +
+# iana-time-zone), so declaring it directly adds no crate to the build.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+# Audit #01 — the rolling log FILE. A shipped desktop app has no stdout, so
+# until this crate arrived every line the app produced was thrown away and a
+# user's crash left no artefact to ask for. 0.2 is the series that pairs with
+# tracing-subscriber 0.3 (it re-exports `MakeWriter` from it); `max_log_files`
+# needs >= 0.2.3.
+tracing-appender = "0.2"
+# Astra computer use (commands/computer). enigo (MIT) simulates mouse and
+# keyboard on all three systems; on Linux only its pure Rust X11 backend, so
+# the build needs no libxdo and no Wayland libraries. It does link
+# libxkbcommon there (the workflows install libxkbcommon-dev; at run time the
+# library is already present wherever GTK is).
+enigo = { version = "0.6", default-features = false, features = ["x11rb"] }
+# The global stop shortcut of computer use (MIT OR Apache-2.0). Held below 2.4
+# on purpose: 2.4 asks for tauri 2.12 and would move the whole app with it.
+tauri-plugin-global-shortcut = ">=2.3, <2.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm"] }
+# The accessibility tree for computer use (Apache-2.0). "input" is the one
+# feature its core module does not compile without.
+uiautomation = { version = "0.25", default-features = false, features = ["input"] }
+# Registry access for LM Studio install-path lookup (Bug #2 — system-wide
+# installs in C:\Program Files\LM Studio that a user reported on v2.4.3).
+winreg = "0.55"
+
+# OS keychain for provider API keys (H5). Windows Credential Manager + macOS
+# Keychain only — both backends are built into the OS, so no extra system
+# libraries are pulled in. Deliberately NOT on Linux: the secret-service
+# backend needs libdbus/gnome-keyring and fails on headless/minimal desktops,
+# so Linux keeps the obfuscated-localStorage path (the frontend falls back when
+# the secret_* commands report unsupported). default-features off avoids the
+# crate's sync-secret-service default.
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native"] }
+
+# Screen capture and the window list for computer use (Apache-2.0). Not on
+# Linux: there xcap pulls in PipeWire, D-Bus and Wayland libraries at build
+# time, and LU reads X11 itself through x11rb instead.
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+xcap = "0.9"
+
+# The X11 client enigo already brings (MIT OR Apache-2.0), named here for the
+# "randr" feature: monitors, capture and the window list of computer use.
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["randr"] }
+
+# Which app a window belongs to, for computer use. All four are already in
+# Cargo.lock through tauri and xcap (MIT, and libc MIT OR Apache-2.0).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSRunningApplication", "libc"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSURL"] }
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
+[dev-dependencies]
+serde_yaml = "0.9.34"
