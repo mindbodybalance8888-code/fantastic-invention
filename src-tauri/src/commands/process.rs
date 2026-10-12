@@ -19,6 +19,18 @@ use crate::state::AppState;
 pub const MACOS_COMFY_REFUSAL: &str =
     "ComfyUI is not used on macOS. Local image and video run on Apple MLX — set it up in Settings → AI Backends → Local Media (Apple MLX).";
 
+/// Write the app's config.json. A failed save must not fail the command that
+/// asked for it (the setting still applies for this session), but it must not
+/// vanish either: log it so a lost setting can be traced.
+fn save_config_json(config_file: &std::path::Path, config: &serde_json::Value) {
+    let result = serde_json::to_string_pretty(config)
+        .map_err(|e| e.to_string())
+        .and_then(|text| fs::write(config_file, text).map_err(|e| e.to_string()));
+    if let Err(err) = result {
+        tracing::warn!(path = %config_file.display(), error = %err, "could not save config.json");
+    }
+}
+
 /// One definition of "may this machine run a local ComfyUI at all". Every entry
 /// point asks this rather than testing the target itself, so the rule has a
 /// single place to be read, tested, and changed.
@@ -2591,7 +2603,7 @@ pub fn set_comfyui_path(path: String, state: State<'_, AppState>) -> Result<serd
         };
 
         config["comfyui_path"] = serde_json::json!(path);
-        let _ = fs::write(&config_file, serde_json::to_string_pretty(&config).unwrap());
+        save_config_json(&config_file, &config);
     }
 
     Ok(serde_json::json!({"status": "saved", "path": path}))
@@ -2661,7 +2673,7 @@ pub fn set_comfyui_host(host: String, state: State<'_, AppState>) -> Result<serd
         if let Some(port) = typed_port {
             config["comfyui_port"] = serde_json::json!(port);
         }
-        let _ = fs::write(&config_file, serde_json::to_string_pretty(&config).unwrap());
+        save_config_json(&config_file, &config);
     }
 
     let is_local = is_local_host(&final_host);
@@ -2697,7 +2709,7 @@ pub fn set_comfyui_port(port: u16, state: State<'_, AppState>) -> Result<serde_j
         };
 
         config["comfyui_port"] = serde_json::json!(port);
-        let _ = fs::write(&config_file, serde_json::to_string_pretty(&config).unwrap());
+        save_config_json(&config_file, &config);
     }
 
     println!("[ComfyUI] Port set to {}", port);
@@ -2754,7 +2766,7 @@ pub fn set_ollama_host(host: String, state: State<'_, AppState>) -> Result<serde
         };
 
         config["ollama_base"] = serde_json::json!(final_base);
-        let _ = fs::write(&config_file, serde_json::to_string_pretty(&config).unwrap());
+        save_config_json(&config_file, &config);
     }
 
     let is_local = url::Url::parse(&final_base)
