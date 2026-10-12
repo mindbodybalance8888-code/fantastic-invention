@@ -803,6 +803,15 @@ pub fn kill_pid_tree(pid: u32) {
     }
 }
 
+/// May `kill(2)` be pointed at this pid? `kill` gives 0, -1 and other negative
+/// values a different meaning (our own process group, every process we may
+/// signal, a whole group), pid 1 is init, and our own pid is never a "stale
+/// listener" to clear. Only a plain other-process pid passes.
+#[cfg(unix)]
+fn is_signalable_pid(pid: i32, own_pid: u32) -> bool {
+    pid > 1 && pid as u32 != own_pid
+}
+
 /// Best-effort stop of whatever process is LISTENING on a local TCP port.
 /// Used by the "Stop" buttons for port-bound backends the bridge didn't spawn
 /// itself (so there's no `Child` handle to kill) — the MLX sidecar and the
@@ -823,6 +832,7 @@ pub fn kill_listeners_on_port(port: u16) {
             for pid in String::from_utf8_lossy(&out.stdout)
                 .split_whitespace()
                 .filter_map(|s| s.parse::<i32>().ok())
+                .filter(|&pid| is_signalable_pid(pid, std::process::id()))
             {
                 unsafe {
                     libc::kill(pid, libc::SIGTERM);
@@ -936,6 +946,19 @@ mod one_windows_tree_kill_guard {
 mod kill_tree_tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn only_a_plain_other_process_pid_may_be_signalled() {
+        let own = std::process::id();
+        assert!(is_signalable_pid(4242, own + 1));
+        // kill(2) reads these as a process group or "everything": never ours to send.
+        assert!(!is_signalable_pid(0, own));
+        assert!(!is_signalable_pid(-1, own));
+        assert!(!is_signalable_pid(-4242, own));
+        // init, and ourselves.
+        assert!(!is_signalable_pid(1, own));
+        assert!(!is_signalable_pid(own as i32, own));
+    }
 
     fn alive(pid: u32) -> bool {
         let out = Command::new("ps")
