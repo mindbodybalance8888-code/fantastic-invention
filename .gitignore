@@ -124,3 +124,5 @@ MAIL-ENTWURF*.md
 /.*.png
 /*-proof.png
 /*-beweis.png
+# Local analytics cache written by the cto-toolkit plugin hook
+/.cto-toolkit/
