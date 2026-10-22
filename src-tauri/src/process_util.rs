@@ -807,7 +807,14 @@ pub fn kill_pid_tree(pid: u32) {
 /// values a different meaning (our own process group, every process we may
 /// signal, a whole group), pid 1 is init, and our own pid is never a "stale
 /// listener" to clear. Only a plain other-process pid passes.
+///
+/// The only production caller (`kill_listeners_on_port`) is `#[cfg(target_os
+/// = "macos")]`, so on Linux this is dead outside the test build — allowed
+/// deliberately, not cfg-gated to macOS, because the pure pid logic is
+/// exercised by `only_a_plain_other_process_pid_may_be_signalled` on every
+/// unix target, which is the point of testing it.
 #[cfg(unix)]
+#[allow(dead_code)]
 fn is_signalable_pid(pid: i32, own_pid: u32) -> bool {
     pid > 1 && pid as u32 != own_pid
 }
