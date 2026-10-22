@@ -25,7 +25,7 @@ pub const MACOS_COMFY_REFUSAL: &str =
 fn save_config_json(config_file: &std::path::Path, config: &serde_json::Value) {
     let result = serde_json::to_string_pretty(config)
         .map_err(|e| e.to_string())
-        .and_then(|text| fs::write(config_file, text).map_err(|e| e.to_string()));
+        .and_then(|text| fs::write(config_file, text).map_err(|e| os_error::english(&e)));
     if let Err(err) = result {
         tracing::warn!(path = %config_file.display(), error = %err, "could not save config.json");
     }
@@ -3760,7 +3760,7 @@ pub(crate) fn offload_local_models_blocking(state: &AppState, include_comfyui: O
     if crate::commands::engine::stop_engine_on_request(state) {
         freed.push("bundled-engine");
     }
-    if crate::commands::engine::stop_embed_locked(state) {
+    if crate::commands::engine::stop_running_embed(state) {
         freed.push("bundled-embed");
     }
 

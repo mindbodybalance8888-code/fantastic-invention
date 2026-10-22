@@ -736,10 +736,12 @@ pub fn install_comfyui(
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_else(|| serde_json::json!({}));
             config["comfyui_path"] = serde_json::json!(dir_str);
-            let _ = std::fs::write(
+            if let Err(e) = std::fs::write(
                 &config_file,
                 serde_json::to_string_pretty(&config).unwrap_or_default(),
-            );
+            ) {
+                tracing::warn!(path = %config_file.display(), error = %e, "could not save comfyui_path to config.json");
+            }
         }
 
         if let Ok(mut s) = install_status.lock() {

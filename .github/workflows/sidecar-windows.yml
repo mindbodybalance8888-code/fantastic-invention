@@ -6,7 +6,7 @@ name: Windows sidecar build + boot smoke
 # build keeps its CPU backend, so /health comes up on the GPU-less runner.
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'scripts/build-llama.sh'
       - '.github/workflows/sidecar-windows.yml'
