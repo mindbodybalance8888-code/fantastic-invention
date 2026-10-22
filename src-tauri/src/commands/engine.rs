@@ -2500,7 +2500,7 @@ const GGUF_ROLE_VISION: &str = "The vision file next to this model";
 /// also Existenz, und ein abgebrochener Download ist eine Datei. Der Pfad
 /// haengt danach als `--mmproj` am llama-server, also stirbt der Start an
 /// einer halben Sichtdatei genauso wie an einem halben Modell, nur eben erst
-/// im Prozess und damit hinter `stop_engine_locked`: die gesunde Engine ist
+/// im Prozess und damit hinter `stop_running_engine`: die gesunde Engine ist
 /// dann schon abgeraeumt. Beide Koepfe werden deshalb hier gelesen, bevor
 /// irgendetwas angehalten wird.
 fn precheck_model_files(model_path: &str) -> Result<Option<String>, String> {
@@ -2943,7 +2943,7 @@ fn start_bundled_engine_blocking(
     };
 
     // Different model (or dead) → stop the old process before spawning.
-    stop_engine_locked(state);
+    stop_running_engine(state);
 
     let outcome = start_after_stop(app, state, &model_path, &tuning, port, slot_dir.as_deref(), mmproj.as_deref());
     settle_switch(state, port, &model_path, outcome, || match (vorher, resolve_engine_binary(app)) {
@@ -3605,7 +3605,7 @@ fn serve_or_heal_garbled(
             mmproj,
             gpu_layers_in(&serving_args),
         );
-        stop_engine_locked(state);
+        stop_running_engine(state);
         // A restart is never an auto layer count, whatever the request said, so
         // the idempotence key must not remember it as one: the next start with
         // these settings has to be allowed to try the card again. Same rule as
@@ -3924,7 +3924,7 @@ fn spawn_engine_attempt(
         let why = diagnostics
             .map(|(buf, _)| tail_lines(&super::shell::captured_text(&buf), 12))
             .unwrap_or_default();
-        stop_engine_locked(state);
+        stop_running_engine(state);
         return Err(StartFailure { died: true, port_taken: true, stderr: why, exit_code: None, signal: None });
     }
     if matches!(outcome, HealthWait::Stopped) {
@@ -3938,7 +3938,7 @@ fn spawn_engine_attempt(
         HealthWait::ChildExited { code, signal } => (true, code, signal),
         _ => (false, None, None),
     };
-    stop_engine_locked(state);
+    stop_running_engine(state);
     Err(StartFailure { died, port_taken: false, stderr: why, exit_code, signal })
 }
 
@@ -4675,13 +4675,13 @@ pub fn spawn_sidecar_watch(app: AppHandle) {
 /// must still not begin the next one.
 pub(crate) fn stop_engine_on_request(state: &AppState) -> bool {
     state.engine_stop_requested.store(true, std::sync::atomic::Ordering::SeqCst);
-    stop_engine_locked(state)
+    stop_running_engine(state)
 }
 
 /// Kill and reap whatever is in the slot. The start's own stops (the old model
 /// before a switch, a failed attempt, a restart of the sanity probe) use this
 /// one, because none of them is a request to leave the engine empty.
-fn stop_engine_locked(state: &AppState) -> bool {
+fn stop_running_engine(state: &AppState) -> bool {
     let mut guard = state.bundled_engine.lock().unwrap();
     if let Some(mut engine) = guard.take() {
         let _ = engine.child.kill();
@@ -4745,7 +4745,7 @@ fn start_bundled_embed_blocking(
         }
     }
 
-    stop_embed_locked(state);
+    stop_running_embed(state);
 
     // Same stranger-on-the-port refusal as the chat engine (see there for the
     // full story): a health answer on a port we hold no child for is an
@@ -4820,7 +4820,7 @@ fn start_bundled_embed_blocking(
         let why = diagnostics
             .map(|(buf, _)| tail_lines(&super::shell::captured_text(&buf), 12))
             .unwrap_or_default();
-        stop_embed_locked(state);
+        stop_running_embed(state);
         return Err(embed_start_failure_message(&e, &why));
     }
 
@@ -4839,7 +4839,7 @@ fn start_bundled_embed_blocking(
         let why = diagnostics
             .map(|(buf, _)| tail_lines(&super::shell::captured_text(&buf), 12))
             .unwrap_or_default();
-        stop_embed_locked(state);
+        stop_running_embed(state);
         return Err(format!(
             "Port {port} answers health checks, but the embeddings server this app just started exited immediately. Another llama-server (likely left over from a previous session or crash) is occupying the port. Quit that process or reboot, then try again.{}",
             if why.is_empty() { String::new() } else { format!("\n\n{why}") }
@@ -4859,7 +4859,7 @@ fn start_bundled_embed_blocking(
 pub async fn stop_bundled_embed(app: AppHandle) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let was_running = stop_embed_locked(&state);
+        let was_running = stop_running_embed(&state);
         serde_json::json!({ "status": if was_running { "stopped" } else { "idle" } })
     })
     .await
@@ -4902,7 +4902,7 @@ pub async fn bundled_embed_status(app: AppHandle) -> Result<serde_json::Value, S
 
 /// Kill the managed embeddings child if present. Returns whether one was
 /// running. Takes the state lock internally; callers must not already hold it.
-pub(crate) fn stop_embed_locked(state: &AppState) -> bool {
+pub(crate) fn stop_running_embed(state: &AppState) -> bool {
     let mut guard = state.bundled_embed.lock().unwrap();
     if let Some(mut embed) = guard.take() {
         let _ = embed.child.kill();
@@ -7367,7 +7367,7 @@ mod tests {
             "the switch no longer brings the previous engine back"
         );
         // Der Stopp steht VOR dem Start, sonst gaebe es nichts zu merken.
-        let stopp = wechsel.find("stop_engine_locked(state);").expect("no stop");
+        let stopp = wechsel.find("stop_running_engine(state);").expect("no stop");
         let merken = wechsel.find("let vorher = {").expect("no memory");
         assert!(merken < stopp, "the engine is stopped before it is remembered");
         // Und der Startweg danach ist EINE Funktion, nicht wieder ein Rumpf
@@ -8240,7 +8240,7 @@ mod tests {
         let switch = body_of("fn start_bundled_engine_blocking(");
         let cleared = switch.find("engine_stop_requested.store(false").expect("a start no longer clears an old stop");
         let gate = switch.find("start_gate(").expect("the start gate is gone");
-        let first_stop = switch.find("stop_engine_locked(state);").expect("no stop");
+        let first_stop = switch.find("stop_running_engine(state);").expect("no stop");
         assert!(gate < cleared && cleared < first_stop, "an old stop is not cleared under the gate, before the work begins");
         // Whether the previous model comes back is decided in one place, and
         // `settle_switch_*` below run that place.
@@ -8728,7 +8728,7 @@ srv    llama_server: exiting due to model loading error";
             .next()
             .unwrap();
         let pruefung = wechsel.find("precheck_model_files(").expect("keine Vorpruefung");
-        let halt = wechsel.find("stop_engine_locked(state);").expect("kein Halt");
+        let halt = wechsel.find("stop_running_engine(state);").expect("kein Halt");
         assert!(pruefung < halt, "die Pruefung steht hinter dem Halt");
         // Und die Sichtdatei wird nirgends daran vorbei geholt: ein blankes
         // existing_mmproj im Wechsel waere wieder die reine Existenzfrage.

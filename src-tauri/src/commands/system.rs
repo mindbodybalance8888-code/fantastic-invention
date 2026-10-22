@@ -629,7 +629,9 @@ pub fn backup_stores(data: String) -> Result<(), String> {
         // never again.
         let aside = dir.join("store_backup.prev.json");
         if !aside.exists() {
-            let _ = std::fs::write(&aside, &previous);
+            if let Err(e) = std::fs::write(&aside, &previous) {
+                tracing::warn!(path = %aside.display(), error = %e, "could not save pre-merge backup rescue copy");
+            }
         }
         merged_backup(&previous, &data, &lost)
     };

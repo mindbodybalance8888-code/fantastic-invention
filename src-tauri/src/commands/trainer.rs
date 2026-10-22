@@ -146,7 +146,9 @@ fn write_config_value(key: &str, value: &str) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
     json[key] = serde_json::json!(value);
-    let _ = fs::write(&path, serde_json::to_string_pretty(&json).unwrap_or_default());
+    if let Err(e) = fs::write(&path, serde_json::to_string_pretty(&json).unwrap_or_default()) {
+        tracing::warn!(path = %path.display(), error = %e, "could not save trainer config value");
+    }
 }
 
 /// Whether a candidate path starts with `~`. `~` is a SHELL expansion, and

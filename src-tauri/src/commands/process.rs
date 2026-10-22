@@ -3760,7 +3760,7 @@ pub(crate) fn offload_local_models_blocking(state: &AppState, include_comfyui: O
     if crate::commands::engine::stop_engine_on_request(state) {
         freed.push("bundled-engine");
     }
-    if crate::commands::engine::stop_embed_locked(state) {
+    if crate::commands::engine::stop_running_embed(state) {
         freed.push("bundled-embed");
     }
 

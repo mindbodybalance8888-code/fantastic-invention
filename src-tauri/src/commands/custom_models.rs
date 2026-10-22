@@ -168,7 +168,9 @@ pub(crate) fn remember_root_in(config: &Path, dir: &str) {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}));
     json[REMEMBERED_ROOT_KEY] = serde_json::json!(dir);
-    let _ = std::fs::write(config, serde_json::to_string_pretty(&json).unwrap_or_default());
+    if let Err(e) = std::fs::write(config, serde_json::to_string_pretty(&json).unwrap_or_default()) {
+        tracing::warn!(path = %config.display(), error = %e, "could not save remembered root");
+    }
 }
 
 /// An empty value reads as `Cleared`, never as a folder named "": a folder the

@@ -1357,7 +1357,9 @@ fn run(runs: &Runs, mut cmd: std::process::Command, out: &Path, steps: u32, pid_
             if let Some(dir) = note.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
-            let _ = std::fs::write(note, child.id().to_string());
+            if let Err(e) = std::fs::write(note, child.id().to_string()) {
+                tracing::warn!(path = %note.display(), error = %e, "could not record image engine pid");
+            }
         }
         runs.step.store(0, SeqCst);
         runs.steps.store(steps, SeqCst);

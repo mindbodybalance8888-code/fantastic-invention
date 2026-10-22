@@ -267,7 +267,9 @@ fn save_roots_to(file: &Path, roots: &[PathBuf]) {
     if let Some(parent) = file.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    let _ = fs::write(file, json);
+    if let Err(e) = fs::write(file, json) {
+        tracing::warn!(path = %file.display(), error = %e, "could not save picked roots");
+    }
 }
 
 /// Test-only stand-in for the native dialog.
