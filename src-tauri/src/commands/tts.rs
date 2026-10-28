@@ -397,6 +397,148 @@ pub async fn synthesize_external(
     Ok(serde_json::json!({ "audio_base64": b64, "mime": mime }))
 }
 
+/// A voice id goes into the request path, so it must be a plain token.
+fn elevenlabs_voice_id_ok(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Synthesize `text` with an ElevenLabs voice and return it base64-encoded for
+/// the frontend to play. Unlike `synthesize_external` this talks to a hosted
+/// service, so the text leaves the computer; the Settings UI says so before the
+/// mode can be picked. The key comes from the user's own Settings, never from
+/// model output, and the host is fixed (not user-supplied), so there is no SSRF
+/// vector. The webview CSP does not allow api.elevenlabs.io, which is why the
+/// request is made here and not in the frontend.
+#[tauri::command]
+pub async fn synthesize_elevenlabs(
+    text: String,
+    voice_id: String,
+    api_key: String,
+) -> Result<serde_json::Value, String> {
+    elevenlabs_request("https://api.elevenlabs.io", text, voice_id, api_key).await
+}
+
+/// The request itself, with the host as a parameter so a test can point it at a
+/// local server. The command above always passes the real, fixed host.
+async fn elevenlabs_request(
+    base: &str,
+    text: String,
+    voice_id: String,
+    api_key: String,
+) -> Result<serde_json::Value, String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err("empty text".to_string());
+    }
+    let voice_id = voice_id.trim().to_string();
+    if !elevenlabs_voice_id_ok(&voice_id) {
+        return Err("invalid ElevenLabs voice id".to_string());
+    }
+    let api_key = api_key.trim().to_string();
+    if api_key.is_empty() {
+        return Err("ElevenLabs API key is not set".to_string());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("LocallyUncensored/2.0")
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client
+        .post(format!("{}/v1/text-to-speech/{}", base, voice_id))
+        .header("xi-api-key", api_key)
+        .header(reqwest::header::ACCEPT, "audio/mpeg")
+        .json(&serde_json::json!({ "text": text, "model_id": "eleven_multilingual_v2" }))
+        .send()
+        .await
+        .map_err(|e| format!("ElevenLabs request failed: {}", os_error::english(&e)))?;
+
+    if !resp.status().is_success() {
+        let code = resp.status().as_u16();
+        let detail = resp.text().await.unwrap_or_default();
+        let snippet: String = detail.chars().take(200).collect();
+        // A shared-library voice has to be added to "My Voices" before the API accepts it.
+        let hint = if code == 400 || code == 404 {
+            " If this is a shared voice, add it to My Voices in ElevenLabs first."
+        } else {
+            ""
+        };
+        return Err(format!("ElevenLabs HTTP {}.{} {}", code, hint, snippet).trim().to_string());
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| os_error::english(&e))?;
+    if bytes.is_empty() {
+        return Err("ElevenLabs returned no audio".to_string());
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(serde_json::json!({ "audio_base64": b64, "mime": "audio/mpeg" }))
+}
+
+#[cfg(test)]
+mod elevenlabs_tests {
+    use super::{elevenlabs_request, elevenlabs_voice_id_ok};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// One-shot local HTTP server: returns the raw request it received.
+    fn serve_once(status_line: &'static str, content_type: &'static str, body: &'static [u8]) -> (String, std::thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let handle = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = vec![0u8; 8192];
+            let n = sock.read(&mut buf).unwrap();
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let head = format!(
+                "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                status_line, content_type, body.len()
+            );
+            sock.write_all(head.as_bytes()).unwrap();
+            sock.write_all(body).unwrap();
+            req
+        });
+        (base, handle)
+    }
+
+    #[test]
+    fn a_good_request_sends_the_key_in_the_header_and_returns_mp3() {
+        let (base, server) = serve_once("200 OK", "audio/mpeg", b"ID3fake");
+        let out = tauri::async_runtime::block_on(elevenlabs_request(&base, " hello ".into(), "voice123".into(), "test-key".into())).unwrap();
+        let req = server.join().unwrap().to_lowercase();
+        assert!(req.starts_with("post /v1/text-to-speech/voice123 "), "path: {req}");
+        assert!(req.contains("xi-api-key: test-key"), "header missing: {req}");
+        assert!(req.contains("\"text\":\"hello\""), "body: {req}");
+        assert_eq!(out["mime"], "audio/mpeg");
+        assert!(!out["audio_base64"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_rejected_shared_voice_names_the_fix() {
+        let (base, server) = serve_once("404 Not Found", "application/json", b"{\"detail\":\"voice_not_found\"}");
+        let err = tauri::async_runtime::block_on(elevenlabs_request(&base, "hi".into(), "voice123".into(), "k".into())).unwrap_err();
+        server.join().unwrap();
+        assert!(err.contains("HTTP 404") && err.contains("My Voices"), "{err}");
+    }
+
+    #[test]
+    fn bad_input_is_refused_before_any_request() {
+        let base = "http://127.0.0.1:1"; // nothing listens; must never be contacted
+        for (t, v, k) in [("", "v", "k"), ("hi", "../x", "k"), ("hi", "v", " ")] {
+            assert!(tauri::async_runtime::block_on(elevenlabs_request(base, t.into(), v.into(), k.into())).is_err());
+        }
+    }
+
+    #[test]
+    fn a_voice_id_is_a_plain_token() {
+        assert!(elevenlabs_voice_id_ok("lcMyyd2HUfFzxdCaC4Ta"));
+        assert!(!elevenlabs_voice_id_ok(""));
+        assert!(!elevenlabs_voice_id_ok("../v1/user"));
+        assert!(!elevenlabs_voice_id_ok("a/b"));
+        assert!(!elevenlabs_voice_id_ok(&"a".repeat(65)));
+    }
+}
+
 #[cfg(test)]
 mod voice_completeness_tests {
     use super::*;

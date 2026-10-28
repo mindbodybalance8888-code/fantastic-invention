@@ -51,11 +51,13 @@ interface VoiceState {
   ttsPitch: number;
   /** TTS engine: bundled Piper (local) or a user-configured external HTTP
    *  endpoint (OpenAI-compatible, e.g. Kokoro-FastAPI) — GitHub #58. */
-  ttsMode: "piper" | "external";
+  ttsMode: "piper" | "external" | "elevenlabs";
   /** External TTS endpoint URL, e.g. http://localhost:8880/v1/audio/speech. */
   externalTtsUrl: string;
   /** Voice name passed to the external engine (e.g. "af_bella" / "alloy"). */
   externalTtsVoice: string;
+  /** ElevenLabs voice id (hosted engine, opt-in). The API key is in elevenLabsStore. */
+  elevenLabsVoiceId: string;
   /** MiniMax voice for the cloud TTS endpoint (appMode 'cloud'). */
   cloudTtsVoice: string;
   /** The microphone for dictation and Voice, empty for the system default. */
@@ -97,9 +99,10 @@ interface VoiceState {
       ttsVoice: string;
       ttsRate: number;
       ttsPitch: number;
-      ttsMode: "piper" | "external";
+      ttsMode: "piper" | "external" | "elevenlabs";
       externalTtsUrl: string;
       externalTtsVoice: string;
+      elevenLabsVoiceId: string;
       cloudTtsVoice: string;
       micId: string;
       micLabel: string;
@@ -148,6 +151,7 @@ export const useVoiceStore = create<VoiceState>()(
       ttsMode: "piper",
       externalTtsUrl: "",
       externalTtsVoice: "",
+      elevenLabsVoiceId: "",
       cloudTtsVoice: "Wise_Woman",
       micId: "",
       micLabel: "",
@@ -189,6 +193,7 @@ export const useVoiceStore = create<VoiceState>()(
           ttsMode: "piper",
           externalTtsUrl: "",
           externalTtsVoice: "",
+          elevenLabsVoiceId: "",
           cloudTtsVoice: "Wise_Woman",
           micId: "",
       micLabel: "",
@@ -216,6 +221,7 @@ export const useVoiceStore = create<VoiceState>()(
         externalTtsUrl: state.externalTtsUrl,
         cloudTtsVoice: state.cloudTtsVoice,
         externalTtsVoice: state.externalTtsVoice,
+        elevenLabsVoiceId: state.elevenLabsVoiceId,
         micId: state.micId,
         micLabel: state.micLabel,
         loopStartMuted: state.loopStartMuted,

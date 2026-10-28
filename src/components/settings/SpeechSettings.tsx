@@ -5,6 +5,7 @@ import { HINWEIS_TEXT } from '../../lib/hinweis'
 import { backendCall } from '../../api/backend'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useVoiceStore } from '../../stores/voiceStore'
+import { useElevenLabsStore } from '../../stores/elevenLabsStore'
 import { checkWhisperAvailable, checkTtsAvailable, downloadPiperVoice, listInstalledPiperVoices } from '../../api/voice'
 import { InlineToggle } from './InlineToggle'
 import { MicrophoneSetting } from './MicrophoneSetting'
@@ -75,6 +76,8 @@ const PIPER_VOICES: { id: string; label: string }[] = [
 export function SpeechSettings() {
   const appMode = useSettingsStore((s) => s.settings.appMode)
   const voiceSettings = useVoiceStore()
+  const elevenLabsKey = useElevenLabsStore((s) => s.apiKey)
+  const setElevenLabsKey = useElevenLabsStore((s) => s.setApiKey)
 
   const [whisper, whisperDo] = useReducer(whisperReducer, initialProbe<WhisperProbe>())
   const [tts, ttsDo] = useReducer(ttsReducer, initialProbe<TtsProbe>())
@@ -384,7 +387,7 @@ export function SpeechSettings() {
     <div className="flex items-center justify-between gap-2 pt-1">
       <span className="text-[0.7rem] text-gray-500">Engine</span>
       <div className="flex items-center gap-1 text-[0.6rem]">
-        {(['piper', 'external'] as const).map((m) => (
+        {(['piper', 'external', 'elevenlabs'] as const).map((m) => (
           <button
             key={m}
             onClick={() => voiceSettings.updateVoiceSettings({ ttsMode: m })}
@@ -400,11 +403,34 @@ export function SpeechSettings() {
                 : 'text-gray-500 border-white/8 hover:text-gray-300')
             }
           >
-            {m === 'piper' ? 'Piper neural' : 'External HTTP'}
+            {m === 'piper' ? 'Piper neural' : m === 'external' ? 'External HTTP' : 'ElevenLabs'}
           </button>
         ))}
       </div>
     </div>
+    {voiceSettings.ttsMode === 'elevenlabs' && (
+      <div className="space-y-1.5">
+        <input
+          value={voiceSettings.elevenLabsVoiceId}
+          onChange={(e) => voiceSettings.updateVoiceSettings({ elevenLabsVoiceId: e.target.value })}
+          placeholder="voice id (from My Voices in ElevenLabs)"
+          spellCheck={false}
+          className="w-full px-2 py-1 rounded bg-transparent border border-white/8 text-[0.65rem] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/20"
+        />
+        <input
+          type="password"
+          value={elevenLabsKey}
+          onChange={(e) => setElevenLabsKey(e.target.value)}
+          placeholder="ElevenLabs API key"
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full px-2 py-1 rounded bg-transparent border border-white/8 text-[0.65rem] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/20"
+        />
+        <p className="text-[0.55rem] text-gray-500 leading-snug">
+          Read-aloud only. The text of each message you read aloud is sent to ElevenLabs, so it leaves your computer. Voice sessions keep using the local voice. A voice from the shared library must be added to My Voices first.
+        </p>
+      </div>
+    )}
     {voiceSettings.ttsMode === 'external' && (
       <div className="space-y-1.5">
         <input

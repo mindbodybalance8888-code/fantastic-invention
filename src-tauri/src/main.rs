@@ -554,6 +554,7 @@ fn main() {
             commands::tts::tts_status,
             commands::tts::synthesize,
             commands::tts::synthesize_external,
+            commands::tts::synthesize_elevenlabs,
             commands::tts::download_voice,
             commands::tts::installed_piper_voices,
             // Agent tools (legacy)

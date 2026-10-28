@@ -187,7 +187,7 @@ describe('endpointMap covers every backendCall/invokeMedia site the frontend can
     'shell_task_kill', 'shell_task_list', 'shell_task_start', 'shell_task_status', 'stage_training_image',
     'start_bundled_embed', 'start_bundled_engine', 'start_character_training', 'start_lmstudio_server',
     'start_local_api', 'start_ollama', 'stop_bundled_embed', 'stop_bundled_engine', 'stop_local_api',
-    'swap_bundled_model', 'sync_custom_model_paths', 'synthesize', 'synthesize_external', 'system_health',
+    'swap_bundled_model', 'sync_custom_model_paths', 'synthesize', 'synthesize_elevenlabs', 'synthesize_external', 'system_health',
     'tts_status', 'update_comfyui', 'validate_workspace_folder', 'web_fetch',
   ])
 
