@@ -65,6 +65,14 @@ async function treeForThisWindow(): Promise<ReactNode> {
       new Promise((resolve) => setTimeout(resolve, 3000)),
     ])
   } catch { /* keychain hydration is best-effort */ }
+  // The ElevenLabs read-aloud key follows the same rule.
+  try {
+    const { useElevenLabsStore } = await import('./stores/elevenLabsStore')
+    await Promise.race([
+      useElevenLabsStore.getState().hydrateApiKey(),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ])
+  } catch { /* keychain hydration is best-effort */ }
   return <App />
 }
 

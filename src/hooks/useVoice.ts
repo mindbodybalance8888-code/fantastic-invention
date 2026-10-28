@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useVoiceStore } from "../stores/voiceStore";
+import { useElevenLabsStore } from "../stores/elevenLabsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useCloudAuthStore, deriveCloudAvailable } from "../stores/cloudAuthStore";
 import {
@@ -7,6 +8,7 @@ import {
   recheckTtsAvailable,
   synthesizeNeural,
   synthesizeExternal,
+  synthesizeElevenLabs,
   synthesizeCloud,
   chunkForTts,
   playNeuralAudio,
@@ -117,6 +119,7 @@ const CLOUD_DICTATION_LIMIT_MS = 340_000;
 
 export function useVoice() {
   const store = useVoiceStore();
+  const elevenLabsKey = useElevenLabsStore((s) => s.apiKey);
   const recorderRef = useRef<AudioRecorder | null>(null);
   // Streaming-dictation plumbing: a polling timer that transcribes the
   // audio-so-far while recording, and a single-in-flight guard so slow
@@ -196,7 +199,9 @@ export function useVoice() {
 
   // External HTTP TTS engine configured + selected (#58). Lets the read-aloud
   // button light up even on a machine without Piper or browser voices.
-  const ttsExternalReady = store.ttsMode === "external" && !!store.externalTtsUrl.trim();
+  const ttsExternalReady =
+    (store.ttsMode === "external" && !!store.externalTtsUrl.trim()) ||
+    (store.ttsMode === "elevenlabs" && !!store.elevenLabsVoiceId.trim() && !!elevenLabsKey.trim());
 
   // Re-probe Whisper on demand (mic mount / after install) and sync the store.
   const recheckStt = useCallback(async (): Promise<boolean> => {
@@ -324,7 +329,9 @@ export function useVoice() {
       // An external HTTP engine (#58) needs a configured URL; Piper needs to be
       // installed; the browser path needs SpeechSynthesis; cloud mode brings
       // its own hosted engine. Bail only if none of them can speak.
-      const externalReady = store.ttsMode === "external" && !!store.externalTtsUrl.trim();
+      const elevenLabsReady =
+        store.ttsMode === "elevenlabs" && !!store.elevenLabsVoiceId.trim() && !!elevenLabsKey.trim();
+      const externalReady = (store.ttsMode === "external" && !!store.externalTtsUrl.trim()) || elevenLabsReady;
       if (!cloudVoice && !externalReady && !store.ttsAvailable && !ttsSupported) return;
 
       const gen = ++speakGen;
@@ -366,13 +373,15 @@ export function useVoice() {
         // External HTTP TTS engine takes precedence when selected + configured.
         if (externalReady) {
           try {
-            const url = await synthesizeExternal(text, store.externalTtsUrl.trim(), store.externalTtsVoice || undefined);
+            const url = elevenLabsReady
+              ? await synthesizeElevenLabs(text, store.elevenLabsVoiceId.trim(), elevenLabsKey.trim())
+              : await synthesizeExternal(text, store.externalTtsUrl.trim(), store.externalTtsVoice || undefined);
             if (stopped()) return;
             await playNeuralAudio(url);
             return;
           } catch (err) {
             if (stopped()) return;
-            log.error("External TTS failed, falling back to browser voices", { err });
+            log.error(elevenLabsReady ? "ElevenLabs TTS failed, falling back to browser voices" : "External TTS failed, falling back to browser voices", { err });
           }
         } else {
           // Local neural (Piper). Trust the cached availability flag, but if it
@@ -438,7 +447,7 @@ export function useVoice() {
         if (!stopped()) store.setSpeaking(false);
       }
     },
-    [store, ttsSupported, cloudVoice]
+    [store, elevenLabsKey, ttsSupported, cloudVoice]
   );
 
   const speakText = useCallback((text: string) => speakInternal(text, false), [speakInternal]);

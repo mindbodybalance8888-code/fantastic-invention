@@ -62,13 +62,14 @@ const SERVICE: &str = crate::app_identity::KEYCHAIN_SERVICE;
 // log, not just visible as a dead login. The alternative (a `lu-cloud-session*`
 // prefix family) was rejected: it would leave a writable corner of the vault
 // open, which is the half of the finding about writes.
-const ALLOWED_ACCOUNTS: [&str; 6] = [
+const ALLOWED_ACCOUNTS: [&str; 7] = [
     "ollama",
     "openai",
     "anthropic",
     "huggingface-token",
     "lu-cloud-session",
     "lu-cloud-session-code-verifier",
+    "elevenlabs",
 ];
 
 /// Reject an account name the app never stores under.
@@ -96,7 +97,7 @@ fn check_account(account: &str) -> Result<(), String> {
 //
 // When one OpenAI-compatible-slot backend takes over the slot from another
 // (openai-slot-handover.ts, chat branch), the displaced backend's API key had
-// nowhere safe to go: ALLOWED_ACCOUNTS above is a fixed six-entry list with no
+// nowhere safe to go: ALLOWED_ACCOUNTS above is a fixed list with no
 // room for "whichever backend just lost the slot", and letting the caller
 // name an arbitrary vault account here would reopen exactly what T-61 closed.
 // This adds a narrow second door instead: one fixed prefix, plus a backend id
@@ -586,6 +587,7 @@ mod account_allowlist_tests {
         const PROVIDER_STORE: &str = include_str!("../../../src/stores/providerStore.ts");
         const MLX_IMAGE: &str = include_str!("../../../src/api/mlx-image.ts");
         const SUPABASE: &str = include_str!("../../../src/api/cloud/supabase.ts");
+        const ELEVENLABS_STORE: &str = include_str!("../../../src/stores/elevenLabsStore.ts");
 
         let mut wanted: Vec<String> = Vec::new();
 
@@ -607,6 +609,9 @@ mod account_allowlist_tests {
 
         // api/mlx-image.ts — the HuggingFace token.
         wanted.push(quoted_after(MLX_IMAGE, "HF_TOKEN_ACCOUNT ="));
+
+        // stores/elevenLabsStore.ts — the ElevenLabs read-aloud API key.
+        wanted.push(quoted_after(ELEVENLABS_STORE, "ELEVENLABS_ACCOUNT ="));
 
         // api/cloud/supabase.ts — the session, plus the PKCE verifier that
         // supabase-js writes through the same adapter under

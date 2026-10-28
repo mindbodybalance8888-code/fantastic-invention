@@ -492,6 +492,21 @@ export async function synthesizeExternal(text: string, url: string, voice?: stri
   return base64ToBlobUrl(data.audio_base64, data.mime || "audio/wav");
 }
 
+/**
+ * Synthesize text with an ElevenLabs voice (hosted: the text leaves the
+ * computer). The request is made in the backend because the webview CSP does
+ * not allow api.elevenlabs.io. Returns a playable blob URL.
+ */
+export async function synthesizeElevenLabs(text: string, voiceId: string, apiKey: string): Promise<string> {
+  const data = await backendCall<{ audio_base64?: string; mime?: string }>("synthesize_elevenlabs", {
+    text,
+    voiceId,
+    apiKey,
+  });
+  if (!data?.audio_base64) throw new Error("ElevenLabs returned no audio");
+  return base64ToBlobUrl(data.audio_base64, data.mime || "audio/mpeg");
+}
+
 /** Download a Piper voice model on demand. Blocks until done (~63 MB). */
 export async function downloadPiperVoice(voice: string): Promise<void> {
   await backendCall("download_voice", { voice });
