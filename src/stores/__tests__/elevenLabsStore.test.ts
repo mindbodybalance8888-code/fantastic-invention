@@ -46,3 +46,61 @@ describe('elevenLabsStore failure paths', () => {
     }
   })
 })
+
+// The vault paths. keychainReady/keychainFailed are module-level, so every test
+// loads a fresh copy of the store against its own mock of the backend wrappers.
+describe('elevenLabsStore with an OS vault', () => {
+  async function load(vault: { get: () => Promise<string | null>; set: (a: string, v: string) => Promise<void> }) {
+    vi.resetModules()
+    const secretGet = vi.fn((_account: string) => vault.get())
+    const secretSet = vi.fn((account: string, value: string) => vault.set(account, value))
+    vi.doMock('../../api/backend', () => ({ secretGet, secretSet }))
+    const { useElevenLabsStore } = await import('../elevenLabsStore')
+    const persisted = () =>
+      (useElevenLabsStore.persist.getOptions().partialize!(useElevenLabsStore.getState()) as { apiKey: string }).apiKey
+    return { store: useElevenLabsStore, secretGet, secretSet, persisted }
+  }
+
+  it('takes the key from the vault and keeps it out of localStorage', async () => {
+    const { store, secretGet, persisted } = await load({ get: async () => 'vault_key', set: async () => {} })
+    await store.getState().hydrateApiKey()
+    expect(secretGet).toHaveBeenCalledWith('elevenlabs')
+    expect(store.getState().apiKey).toBe('vault_key')
+    expect(persisted()).toBe('')
+  })
+
+  it('moves a key saved by an earlier build into the vault', async () => {
+    const { store, secretSet, persisted } = await load({ get: async () => null, set: async () => {} })
+    store.setState({ apiKey: 'old_local_key' })
+    await store.getState().hydrateApiKey()
+    expect(secretSet).toHaveBeenCalledWith('elevenlabs', 'old_local_key')
+    expect(persisted()).toBe('')
+    expect(store.getState().apiKey).toBe('old_local_key')
+  })
+
+  it('writes a new key to the vault, not to localStorage', async () => {
+    const { store, secretSet, persisted } = await load({ get: async () => null, set: async () => {} })
+    await store.getState().hydrateApiKey()
+    store.getState().setApiKey('new_key')
+    expect(secretSet).toHaveBeenCalledWith('elevenlabs', 'new_key')
+    expect(persisted()).toBe('')
+    expect(store.getState().apiKey).toBe('new_key')
+  })
+
+  it('keeps the obfuscated fallback when a vault write fails, so the key is not lost', async () => {
+    const { store, persisted } = await load({ get: async () => null, set: async () => { throw new Error('locked') } })
+    await store.getState().hydrateApiKey()
+    store.getState().setApiKey('keep_me')
+    await new Promise((r) => setTimeout(r, 0)) // let the rejected write settle
+    expect(store.getState().apiKey).toBe('keep_me')
+    expect(atob(persisted()).split('').reverse().join('')).toBe('keep_me')
+  })
+
+  it('stays on the obfuscated fallback when there is no vault', async () => {
+    const { store, secretSet, persisted } = await load({ get: async () => { throw new Error('keychain unavailable') }, set: async () => {} })
+    await store.getState().hydrateApiKey()
+    store.getState().setApiKey('local_only')
+    expect(secretSet).not.toHaveBeenCalled()
+    expect(atob(persisted()).split('').reverse().join('')).toBe('local_only')
+  })
+})
